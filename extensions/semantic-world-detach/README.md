@@ -23,8 +23,14 @@ All authoritative state lives in the external Semantic World Kernel + middle lay
 - For walkable experience open `/cyberia.html` (or with `?engine=http://...` for remote kernel)
 - Other extensions can call `window.proposeSemanticWorldAction(...)` or listen to `window.__semanticWorldProjections`
 
+## Version Control
+
+**All recoding and modifications to SillyTavern for this project are synced exclusively via the GitHub MCP connector** to `winzmiau/SillyTavern` on branch `feat/semantic-world-detach`.
+
+This ensures proper version control of the thin gateway (ST extension + Node plugin) + exchangeable viz (Cyberia).
+
 ## Related
-- Branch: feat/semantic-world-detach
+- Branch: feat/semantic-world-detach on winzmiau/SillyTavern
 - See also: plugins/semantic-world/index.mjs and the semantic_world_engine/ sources + DETACHMENT_ARCHITECTURE.md
 
 This is part of forging a version-controlled SillyTavern with detached semantic core (winzmiau/SillyTavern).

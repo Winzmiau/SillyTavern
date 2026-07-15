@@ -90,7 +90,7 @@ const EYE_HEIGHT  = 2.0;    // camera eye height above ground (tronlike CAMERA_H
 const FOV_DEG     = 75.0;
 const NEAR        = 0.06;    // depth clip
 const WALK_SPEED  = 8.0;     // m/s (browsing pace; tronlike WALK 1.6 is slow for a 96m world)
-const RUN_SPEED  = 16.0;
+const RUN_SPEED   = 16.0;
 const SENS        = 0.0022;  // mouse look sensitivity (radians / pixel)
 const PITCH_LIMIT = 1.40;    // ~80 deg
 const FAR_FOG     = 70.0;    // metres — depth fade to background
@@ -103,7 +103,7 @@ const BASE_COLOR = [30, 180, 255];
 const params = new URLSearchParams(location.search);
 let ENGINE = params.get('engine') || '';
 if (ENGINE && !ENGINE.endsWith('/')) ENGINE += '/';
-const api = (p) => ENGINE + p.replace(/^\/,'');
+const api = (p) => ENGINE + p.replace(/^\//,'');
 console.log('[cyberia] engine base:', ENGINE || 'same-origin (ST proxy or co-serve)');
 // Patch global fetch for the relative calls in the original code
 const _fetch = window.fetch;
