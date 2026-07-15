@@ -103,7 +103,7 @@ const BASE_COLOR = [30, 180, 255];
 const params = new URLSearchParams(location.search);
 let ENGINE = params.get('engine') || '';
 if (ENGINE && !ENGINE.endsWith('/')) ENGINE += '/';
-const api = (p) => ENGINE + p.replace(/^\//,'');
+const api = (p) => ENGINE + p.replace(/^\/,'');
 console.log('[cyberia] engine base:', ENGINE || 'same-origin (ST proxy or co-serve)');
 // Patch global fetch for the relative calls in the original code
 const _fetch = window.fetch;
@@ -179,9 +179,9 @@ function cameraVectors() {
 // perspective projection — ported from CameraProjector.world_to_screen()
 function project(wx, wy, wz, cam, basis) {
   const dx = wx - cam[0], dy = wy - cam[1], dz = wz - cam[2];
-  const X = dx * basis.rgt[0] + dy * basis.up[0]  + dz * basis.up[1]  + dz * basis.rgt[2];
-  const Y = dx * basis.up[0]  + dy * basis.up[1]  + dz * basis.up[1]  + dz * basis.up[2];
-  const Z = dx * basis.f[0]   + dy * basis.f[1]   + dz * basis.f[1]   + dz * basis.f[2];   // depth
+  const X = dx * basis.rgt[0] + dy * basis.rgt[1] + dz * basis.rgt[2];
+  const Y = dx * basis.up[0]  + dy * basis.up[1]  + dz * basis.up[2];
+  const Z = dx * basis.f[0]   + dy * basis.f[1]   + dz * basis.f[2];   // depth
   if (Z <= NEAR) return null;                                          // behind camera
   return { sx: CX + FOCAL * X / Z, sy: CY - FOCAL * Y / Z, depth: Z };
 }
