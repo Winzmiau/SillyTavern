@@ -80,7 +80,7 @@ export async function init(router) {
       const r = await fetch(`${MIDDLE}/context?${new URLSearchParams(req.query)}`);
       if (r.ok) return res.json(await r.json());
     } catch {}
-    const url = new URL(`${DIRECT_SWE}/v1/context`);
+    const url = new URL(`${DIRECT_SWE}/v1/context");
     for (const [k, v] of Object.entries(req.query)) url.searchParams.set(k, String(v));
     const response = await fetch(url);
     res.status(response.status).json(await response.json());

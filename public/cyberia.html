@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>cyberia — walk the semantic world</title>
+<!--
+  cyberia.html — self-contained FIRST-PERSON projected-manifold renderer (LAYER 2).
+  Zero external URLs (no vendored libs, no remote scripts): a hand-rolled Canvas2D renderer
+  in the tronlike neon aesthetic. Reads live SceneFrames from the headless engine server
+  (serve_cyberia.py) over relative fetches (/frame, /pose, /health) so the SAME page works
+  whether the engine runs on this Mac or on the headless Spark — the browser IS the display.
+
+  Ported from ~/eve-intel-workspace/tronlike (READ-ONLY precursor, never modified):
+    * color_from_CA()          <- manifold_core.py  (verbatim neon TRON palette)
+    * camera vectors / project <- manifold_lspe_world_explorer.py (get_camera_vectors +
+                                   CameraProjector.world_to_screen)
+    * Player WASD+mouse+eye-height+ground-follow <- manifold_lspe_world_explorer.py Player
+
+  Author: claude_code_eve:cs-mbp-eac0a2, 2026-07-14 (Cyberia engine increment 4).
+  Status: lab/ (Prefix Laws — research-only). true-3D Three.js mesh + free camera = increment 5.
+-->
+<style>
+  :root { --bg:#05070d; --neon:#33ccff; --amber:#ff9933; --ink:#cfe9ff; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html, body { height:100%; background:var(--bg); overflow:hidden;
+               font-family:"SFMono-Regular", Menlo, Consolas, monospace; color:var(--ink); }
+  #view { position:fixed; inset:0; display:block; background:var(--bg); cursor:crosshair; }
+
+  .panel { position:fixed; z-index:5; background:rgba(5,10,20,0.62);
+           border:1px solid rgba(51,204,255,0.32); border-radius:6px;
+           padding:8px 11px; font-size:12px; line-height:1.5;
+           backdrop-filter:blur(2px); text-shadow:0 0 6px rgba(51,204,255,0.35); }
+  #hud   { top:12px; left:12px; }
+  #hud .k { color:var(--amber); }
+  #hud .prov { color:#7fb3d5; font-size:11px; }
+  #legend { top:12px; right:12px; }
+  #legend h4 { font-size:11px; letter-spacing:1px; color:var(--neon);
+               text-transform:uppercase; margin-bottom:5px; font-weight:600; }
+  #legend .row { display:flex; align-items:center; gap:7px; }
+  #legend .sw { width:11px; height:11px; border-radius:2px; box-shadow:0 0 8px currentColor; }
+  #help  { bottom:12px; left:12px; color:#8fb8d6; font-size:11px; }
+  #help b { color:var(--neon); }
+  #banner { position:fixed; inset:0; z-index:10; display:flex; align-items:center;
+            justify-content:center; flex-direction:column; gap:10px; text-align:center;
+            background:radial-gradient(circle at 50% 45%, rgba(51,204,255,0.10), transparent 60%); }
+  #banner .t { font-size:26px; letter-spacing:6px; color:var(--neon);
+               text-shadow:0 0 18px rgba(51,204,255,0.6); }
+  #banner .s { font-size:13px; color:#8fb8d6; max-width:520px; }
+  #banner.hide { display:none; }
+  .cta { border:1px solid var(--neon); color:var(--neon); padding:8px 18px; border-radius:5px;
+         font-size:13px; letter-spacing:2px; cursor:pointer; }
+</style>
+</head>
+<body>
+  <canvas id="view"></canvas>
+
+  <div id="hud" class="panel">
+    <div><span class="k">cyberia</span> · tick <span id="hudTick">–</span>
+         · bodies <span id="hudBodies">–</span></div>
+    <div>pos <span id="hudPos">–</span> · yaw <span id="hudYaw">–</span></div>
+    <div class="prov" id="hudProv">connecting to engine…</div>
+  </div>
+
+  <div id="legend" class="panel">
+    <h4>archetype key</h4>
+    <div class="row"><span class="sw" style="color:#33ccff;background:#33ccff"></span>Hero</div>
+    <div class="row"><span class="sw" style="color:#b060ff;background:#b060ff"></span>Shadow</div>
+    <div class="row"><span class="sw" style="color:#ff9933;background:#ff9933"></span>Trickster</div>
+    <div class="row"><span class="sw" style="color:#5affc8;background:#5affc8"></span>Self</div>
+  </div>
+
+  <div id="help" class="panel"><b>WASD</b> move · <b>mouse</b> look · <b>shift</b> run · <b>esc</b> release</div>
+
+  <div id="banner">
+    <div class="t">C Y B E R I A</div>
+    <div class="s">A walkable world projected from grok's semantic lore. The engine computes
+      headless; your browser draws the pixels. Click to enter — WASD to move, mouse to look.</div>
+    <div class="cta" id="enter">▶ ENTER THE MANIFOLD</div>
+  </div>
+
+<script>
+"use strict";
+// ---------------------------------------------------------------------------
+// Constants (world units in metres; ported scales from tronlike engine_config)
+// ---------------------------------------------------------------------------
+const CELL_SIZE   = 2.0;    // metres per grid cell (tronlike GRID_SCALE / CELL_SIZE)
+const HEIGHT_SCALE= 7.0;    // metres of terrain relief for heightmap in [0,1]
+const EYE_HEIGHT  = 2.0;    // camera eye height above ground (tronlike CAMERA_HEIGHT)
+const FOV_DEG     = 75.0;
+const NEAR        = 0.06;    // depth clip
+const WALK_SPEED  = 8.0;     // m/s (browsing pace; tronlike WALK 1.6 is slow for a 96m world)
+const RUN_SPEED  = 16.0;
+const SENS        = 0.0022;  // mouse look sensitivity (radians / pixel)
+const PITCH_LIMIT = 1.40;    // ~80 deg
+const FAR_FOG     = 70.0;    // metres — depth fade to background
+
+// TRON neon palette — color_from_CA ported VERBATIM from manifold_core.py
+const BASE_COLOR = [30, 180, 255];
+
+// === Grok patch for Claude integration ===
+// Support ?engine=URL for separate headless compute (Spark) while renderer served by ST
+const params = new URLSearchParams(location.search);
+let ENGINE = params.get('engine') || '';
+if (ENGINE && !ENGINE.endsWith('/')) ENGINE += '/';
+const api = (p) => ENGINE + p.replace(/^\//,'');
+console.log('[cyberia] engine base:', ENGINE || 'same-origin (ST proxy or co-serve)');
+// Patch global fetch for the relative calls in the original code
+const _fetch = window.fetch;
+window.fetch = (url, opts) => {
+  if (typeof url === 'string' && url.startsWith('/') && ENGINE) {
+    url = api(url);
+  }
+  return _fetch(url, opts);
+};
+
+const HL_COLOR   = [80, 220, 255];
+// per-archetype body/billboard colours + legend
+const ARCH_COLOR = {
+  Hero:      [51, 204, 255],
+  Shadow:    [176, 96, 255],
+  Trickster: [255, 153, 51],
+  Self:      [90, 255, 200],
+};
+const DEFAULT_ARCH = [200, 220, 255];
+
+const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
+const lerp  = (a, b, t) => a * (1 - t) + b * t;
+
+function color_from_CA(c, a) {           // <- manifold_core.ManifoldRenderer.color_from_CA
+  const m = Math.max(c, a);
+  let r = lerp(BASE_COLOR[0], HL_COLOR[0], m);
+  let g = lerp(BASE_COLOR[1], HL_COLOR[1], m);
+  let b = lerp(BASE_COLOR[2], HL_COLOR[2], m);
+  r = clamp(r + 60 * a, 0, 255);
+  g = clamp(g + 10 * a, 0, 255);
+  b = clamp(b +  5 * a, 0, 255);
+  return [r | 0, g | 0, b | 0];
+}
+// ---------------------------------------------------------------------------
+// Canvas + camera
+// ---------------------------------------------------------------------------
+const canvas = document.getElementById("view");
+const ctx = canvas.getContext("2d");
+let CW = 0, CH = 0, CX = 0, CY = 0, FOCAL = 1;
+function resize() {
+  CW = canvas.width = Math.floor(window.innerWidth);
+  CH = canvas.height = Math.floor(window.innerHeight);
+  CX = CW / 2; CY = CH / 2;
+  FOCAL = (CW / 2) / Math.tan((FOV_DEG * Math.PI / 180) / 2);
+}
+window.addEventListener("resize", resize);
+resize();
+
+// player pose (world metres). x -> grid column axis, z -> grid row axis (engine convention)
+const player = { x: 48.0, z: 48.0, yaw: 0.0, pitch: -0.34 };
+const keys = Object.create(null);
+
+let frame = null;      // latest SceneFrame dict
+let gridH = 48, gridW = 48;
+
+// camera basis from yaw/pitch — ported from Player.get_camera_vectors()
+function cameraVectors() {
+  const cy = Math.cos(player.yaw), sy = Math.sin(player.yaw);
+  const cp = Math.cos(player.pitch), sp = Math.sin(player.pitch);
+  const f = [cy * cp, sp, sy * cp];                 // forward
+  // right = normalize(forward x up0), up0 = (0,1,0)
+  let rgt = [-f[2], 0, f[0]];
+  const rl = Math.hypot(rgt[0], rgt[1], rgt[2]) || 1;
+  rgt = [rgt[0] / rl, rgt[1] / rl, rgt[2] / rl];
+  // up = normalize(right x forward)
+  let up = [rgt[1] * f[2] - rgt[2] * f[1],
+            rgt[2] * f[0] - rgt[0] * f[2],
+            rgt[0] * f[1] - rgt[1] * f[0]];
+  const ul = Math.hypot(up[0], up[1], up[2]) || 1;
+  up = [up[0] / ul, up[1] / ul, up[2] / ul];
+  return { f, rgt, up };
+}
+// perspective projection — ported from CameraProjector.world_to_screen()
+function project(wx, wy, wz, cam, basis) {
+  const dx = wx - cam[0], dy = wy - cam[1], dz = wz - cam[2];
+  const X = dx * basis.rgt[0] + dy * basis.up[0]  + dz * basis.up[1]  + dz * basis.rgt[2];
+  const Y = dx * basis.up[0]  + dy * basis.up[1]  + dz * basis.up[1]  + dz * basis.up[2];
+  const Z = dx * basis.f[0]   + dy * basis.f[1]   + dz * basis.f[1]   + dz * basis.f[2];   // depth
+  if (Z <= NEAR) return null;                                          // behind camera
+  return { sx: CX + FOCAL * X / Z, sy: CY - FOCAL * Y / Z, depth: Z };
+}
+// ---------------------------------------------------------------------------
+// Movement (ported from Player.update): WASD on the manifold + ground-follow
+// ---------------------------------------------------------------------------
+function groundHeightAt(x, z) {
+  if (!frame) return 0;
+  const gj = clamp(Math.round(x / CELL_SIZE), 0, gridW - 1);
+  const gi = clamp(Math.round(z / CELL_SIZE), 0, gridH - 1);
+  return frame.heightmap[gi][gj] * HEIGHT_SCALE;
+}
+function stepPlayer(dt) {
+  let fwd = (keys["w"] ? 1 : 0) - (keys["s"] ? 1 : 0);
+  let strf = (keys["d"] ? 1 : 0) - (keys["a"] ? 1 : 0);
+  const mag = Math.hypot(fwd, strf);
+  if (mag > 0) { fwd /= mag; strf /= mag; }
+  const cy = Math.cos(player.yaw), sy = Math.sin(player.yaw);
+  const rx = Math.cos(player.yaw + Math.PI / 2), rz = Math.sin(player.yaw + Math.PI / 2);
+  const dirX = cy * fwd + rx * strf;
+  const dirZ = sy * fwd + rz * strf;
+  const speed = (keys["shift"]) ? RUN_SPEED : WALK_SPEED;
+  player.x += dirX * speed * dt;
+  player.z += dirZ * speed * dt;
+  const lo = CELL_SIZE * 0.5;
+  player.x = clamp(player.x, lo, gridW * CELL_SIZE - lo);
+  player.z = clamp(player.z, lo, gridH * CELL_SIZE - lo);
+}
+
+// ---------------------------------------------------------------------------
+// Networking — relative fetches so the same page works on Mac OR headless Spark
+// ---------------------------------------------------------------------------
+let inflightFrame = false;
+async function pumpFrame() {
+  if (inflightFrame) return;
+  inflightFrame = true;
+  try {
+    const res = await fetch("/frame", { cache: "no-store" });
+    if (res.ok) {
+      frame = await res.json();
+      gridH = frame.grid_hw[0]; gridW = frame.grid_hw[1];
+    }
+  } catch (e) { /* engine not reachable yet */ }
+  finally { inflightFrame = false; }
+}
+let lastPose = 0, poseInflight = false;
+async function postPose() {
+  const now = performance.now();
+  if (poseInflight || now - lastPose < 80) return;
+  lastPose = now; poseInflight = true;
+  try {
+    await fetch("/pose", {
+      method: "POST", cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ x: player.x, z: player.z, yaw: player.yaw }),
+    });
+  } catch (e) { /* ignore */ }
+  finally { poseInflight = false; }
+}
+
+// ---------------------------------------------------------------------------
+// Render
+// ---------------------------------------------------------------------------
+function fog(depth) { return clamp(1.0 - depth / FAR_FOG, 0.06, 1.0); }
+
+function render() {
+  ctx.fillStyle = "#05070d";
+  ctx.fillRect(0, 0, CW, CH);
+  if (!frame) { requestAnimationFrame(loop0); return; }
+
+  const H = gridH, W = gridW;
+  const hm = frame.heightmap, af = frame.archetype_field;
+  const groundY = groundHeightAt(player.x, player.z);
+  const cam = [player.x, groundY + EYE_HEIGHT, player.z];
+  const basis = cameraVectors();
+
+  // project every grid vertex once (cache), then build quads from cached projections
+  const P = new Array(H);
+  for (let i = 0; i < H; i++) {
+    const row = new Array(W);
+    for (let j = 0; j < W; j++) {
+      row[j] = project(j * CELL_SIZE, hm[i][j] * HEIGHT_SCALE, i * CELL_SIZE, cam, basis);
+    }
+    P[i] = row;
+  }
+
+  // collect visible quads with a painter-sort depth
+  const quads = [];
+  for (let i = 0; i < H - 1; i++) {
+    for (let j = 0; j < W - 1; j++) {
+      const a = P[i][j], b = P[i][j + 1], c = P[i + 1][j + 1], d = P[i + 1][j];
+      if (!a || !b || !c || !d) continue;                 // any corner behind camera -> skip
+      const cVal = (hm[i][j] + hm[i][j + 1] + hm[i + 1][j + 1] + hm[i + 1][j]) * 0.25;
+      const aVal = (af[i][j] + af[i][j + 1] + af[i + 1][j + 1] + af[i + 1][j]) * 0.25;
+      const depth = (a.depth + b.depth + c.depth + d.depth) * 0.25;
+      quads.push({ a, b, c, d, cVal, aVal, depth });
+    }
+  }
+  quads.sort((p, q) => q.depth - p.depth);                // far -> near (painter's)
+
+  // membranes (filled) then neon edges (additive glow)
+  for (const q of quads) {
+    const f = fog(q.depth);
+    const col = color_from_CA(q.cVal, q.aVal);
+    const alpha = (0.18 + 0.60 * Math.max(q.cVal, q.aVal)) * f;   // tronlike 120+135*max, /255
+    ctx.beginPath();
+    ctx.moveTo(q.a.sx, q.a.sy); ctx.lineTo(q.b.sx, q.b.sy);
+    ctx.lineTo(q.c.sx, q.c.sy); ctx.lineTo(q.d.sx, q.d.sy); ctx.closePath();
+    ctx.fillStyle = `rgba(${col[0]},${col[1]},${col[2]},${alpha.toFixed(3)})`;
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = "lighter";               // neon edges add up -> TRON bloom
+  ctx.lineWidth = 1;
+  for (const q of quads) {
+    const f = fog(q.depth);
+    const col = color_from_CA(q.cVal, q.aVal);
+    ctx.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},${(0.28 * f).toFixed(3)})`;
+    ctx.beginPath();
+    ctx.moveTo(q.a.sx, q.a.sy); ctx.lineTo(q.b.sx, q.b.sy);
+    ctx.lineTo(q.c.sx, q.c.sy); ctx.lineTo(q.d.sx, q.d.sy); ctx.closePath();
+    ctx.stroke();
+  }
+  ctx.globalCompositeOperation = "source-over";
+
+  drawBodies(cam, basis);
+  drawCrosshair();
+  updateHUD();
+  requestAnimationFrame(loop0);
+}
+
+function drawBodies(cam, basis) {
+  if (!frame.bodies) return;
+  // project + sort far->near so nearer labels draw on top
+  const items = [];
+  for (const b of frame.bodies) {
+    const p3 = b.pos3;   // (x=col-axis, height[0..1], y=row-axis)
+    const pr = project(p3[0] * CELL_SIZE, p3[1] * HEIGHT_SCALE + 1.2, p3[2] * CELL_SIZE, cam, basis);
+    if (pr) items.push({ b, pr });
+  }
+  items.sort((a, z) => z.pr.depth - a.pr.depth);
+  ctx.textAlign = "center";
+  for (const { b, pr } of items) {
+    const col = ARCH_COLOR[b.archetype] || DEFAULT_ARCH;
+    const rgb = `rgb(${col[0]},${col[1]},${col[2]})`;
+    const r = clamp(140 / pr.depth, 3, 22);
+    const f = fog(pr.depth);
+    // glowing orb
+    ctx.globalCompositeOperation = "lighter";
+    ctx.beginPath();
+    ctx.arc(pr.sx, pr.sy, r, 0, Math.PI * 2);
+    const grd = ctx.createRadialGradient(pr.sx, pr.sy, 0, pr.sx, pr.sy, r);
+    grd.addColorStop(0, `rgba(${col[0]},${col[1]},${col[2]},${(0.95 * f).toFixed(3)})`);
+    grd.addColorStop(1, `rgba(${col[0]},${col[1]},${col[2]},0)`);
+    ctx.fillStyle = grd; ctx.fill();
+    ctx.globalCompositeOperation = "source-over";
+    // core dot
+    ctx.beginPath(); ctx.arc(pr.sx, pr.sy, Math.max(1.5, r * 0.28), 0, Math.PI * 2);
+    ctx.fillStyle = rgb; ctx.fill();
+    // label
+    const fs = clamp(Math.round(200 / pr.depth), 9, 17);
+    ctx.font = `${fs}px Menlo, monospace`;
+    ctx.shadowColor = rgb; ctx.shadowBlur = 8;
+    ctx.fillStyle = `rgba(230,245,255,${(0.55 + 0.45 * f).toFixed(3)})`;
+    ctx.fillText(b.label || b.id, pr.sx, pr.sy - r - 3);
+    ctx.shadowBlur = 0;
+  }
+  ctx.textAlign = "start";
+}
+
+function drawCrosshair() {
+  ctx.strokeStyle = "rgba(51,204,255,0.75)";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(CX - 7, CY); ctx.lineTo(CX + 7, CY);
+  ctx.moveTo(CX, CY - 7); ctx.lineTo(CX, CY + 7);
+  ctx.stroke();
+}
+
+function updateHUD() {
+  document.getElementById("hudTick").textContent = frame.tick;
+  document.getElementById("hudBodies").textContent = (frame.bodies || []).length;
+  document.getElementById("hudPos").textContent =
+    `(${player.x.toFixed(1)}, ${player.z.toFixed(1)})`;
+  document.getElementById("hudYaw").textContent = `${(player.yaw * 180 / Math.PI % 360).toFixed(0)}°`;
+  const pv = frame.provenance || {};
+  const backend = pv.embedding_backend || pv.engine || "engine";
+  const dataOrigin = pv.embedding_simulated ? "SIMULATED" : "REAL lore";
+  document.getElementById("hudProv").textContent = `${dataOrigin} · ${backend}`;
+}
+
+// ---------------------------------------------------------------------------
+// Main loop (fixed-timestep movement, rAF render, throttled net)
+// ---------------------------------------------------------------------------
+let lastT = performance.now();
+let frameCount = 0;
+function loop0() {
+  const now = performance.now();
+  let dt = (now - lastT) / 1000; lastT = now;
+  dt = clamp(dt, 0, 0.05);
+  stepPlayer(dt);
+  // refetch a SceneFrame ~every 6 rendered frames (~10 Hz at 60fps)
+  if ((frameCount++ % 6) === 0) pumpFrame();
+  // post pose when moving or looking
+  if (keys["w"] || keys["a"] || keys["s"] || keys["d"] || movedLook) { postPose(); movedLook = false; }
+  render();   // render() re-schedules loop0 via requestAnimationFrame
+}
+
+// ---------------------------------------------------------------------------
+// Input: pointer-lock look + WASD
+// ---------------------------------------------------------------------------
+let movedLook = false;
+function keyName(e) {
+  if (e.key === "Shift") return "shift";
+  return (e.key || "").toLowerCase();
+}
+window.addEventListener("keydown", (e) => {
+  keys[keyName(e)] = true;
+  if (["w", "a", "s", "d", " "].includes((e.key || "").toLowerCase())) e.preventDefault();
+});
+window.addEventListener("keyup", (e) => { keys[keyName(e)] = false; });
+window.addEventListener("blur", () => { for (const k in keys) keys[k] = false; });
+
+canvas.addEventListener("click", () => { canvas.requestPointerLock(); });
+document.getElementById("enter").addEventListener("click", () => {
+  document.getElementById("banner").classList.add("hide");
+  canvas.requestPointerLock();
+});
+document.addEventListener("pointerlockchange", () => {
+  if (document.pointerLockElement === canvas) {
+    document.getElementById("banner").classList.add("hide");
+  }
+});
+document.addEventListener("mousemove", (e) => {
+  if (document.pointerLockElement !== canvas) return;
+  player.yaw += e.movementX * SENS;
+  player.pitch = clamp(player.pitch - e.movementY * SENS, -PITCH_LIMIT, PITCH_LIMIT);
+  movedLook = true;
+});
+
+// kick off
+pumpFrame();
+requestAnimationFrame(loop0);
+</script>
+</body>
+</html>
