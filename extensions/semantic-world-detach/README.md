@@ -29,8 +29,32 @@ All authoritative state lives in the external Semantic World Kernel + middle lay
 
 This ensures proper version control of the thin gateway (ST extension + Node plugin) + exchangeable viz (Cyberia).
 
+## Middle-layer contract (what a backend must implement)
+
+The gateway (`plugins/semantic-world/index.mjs`) forwards to a middle layer
+(default `http://127.0.0.1:8788`, override `SEMANTIC_WORLD_MIDDLE_URL`) with a
+direct-kernel fallback (default `http://127.0.0.1:8787`, override
+`SEMANTIC_WORLD_DIRECT_URL`):
+
+- `POST /process_intent` — body as built by `index.js`:
+  `{schema_version: 1, source, chat_id, message_id, world_id, branch_id,
+  observer_actor_ids[], expected_event_seq, fork_policy:
+  "auto_if_world_altering"|"always_experimental", intent_type, payload, raw_text}`
+  → `200 {branch_id, new_revision, projections: {st, cyberia}}`;
+  stale `expected_event_seq` should yield `409 {current_seq}`.
+- `POST /assert_opencyc` — ontology assertion (`{child, parent}` or
+  `{a, b, relation: "disjoint"}`).
+- `GET /context` — bounded world context (query params passed through).
+
+A reference implementation over an event-sourced MYCIN/OpenCyc world exists in
+the EVE lab (`lab/cyberia/lab_semantic_middle_layer_v0.py`, 23 self-tests,
+including verbatim goldens of the intent body this extension emits).
+
 ## Related
 - Branch: feat/semantic-world-detach on winzmiau/SillyTavern
-- See also: plugins/semantic-world/index.mjs and the semantic_world_engine/ sources + DETACHMENT_ARCHITECTURE.md
+- See also: `plugins/semantic-world/index.mjs` (gateway) and
+  `plugins/semantic-world/index.test.mjs` (tests). The kernel sources
+  (`semantic_world_engine/`, `DETACHMENT_ARCHITECTURE.md`) live in the external
+  semantic-world-engine project, not in this repository.
 
 This is part of forging a version-controlled SillyTavern with detached semantic core (winzmiau/SillyTavern).
