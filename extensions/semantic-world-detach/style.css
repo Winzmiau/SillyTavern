@@ -1,0 +1,15 @@
+/* Semantic World Engine (detach) - thin client styles.
+   Currently minimal; projections are data-driven into Cyberia or other viz.
+   Future: HUD overlays, map click styles, epistemic fact badges. */
+
+.swe-binding {
+  font-family: Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  opacity: 0.85;
+}
+
+/* placeholder for future walkable seam UI */
+#cyberia-link, .swe-viz-hud {
+  position: fixed;
+  z-index: 999;
+}

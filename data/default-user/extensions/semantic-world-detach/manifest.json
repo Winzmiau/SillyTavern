@@ -1,0 +1,15 @@
+{
+  "display_name": "Semantic World Engine",
+  "loading_order": 50,
+  "js": "index.js",
+  "css": "style.css",
+  "author": "Planeframe",
+  "version": "0.4.0",
+  "homePage": "https://github.com/planeframe/semantic-world-engine",
+  "minimum_client_version": "1.0.0",
+  "auto_update": false,
+  "hooks": {
+    "enable": "onEnable",
+    "disable": "onDisable"
+  }
+}
