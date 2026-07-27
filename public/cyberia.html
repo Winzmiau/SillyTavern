@@ -117,7 +117,7 @@ const engineFetch = (url, opts) => {
   }
   return _fetch(url, opts);
 };
-window.fetch = engineFetch;
+if (ENGINE) window.fetch = engineFetch;
 
 const HL_COLOR   = [80, 220, 255];
 // per-archetype body/billboard colours + legend
