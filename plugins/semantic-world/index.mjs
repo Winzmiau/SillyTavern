@@ -6,9 +6,13 @@
 // - Projection to exchangeable visualization (Cyberia walkable 3D etc.)
 
 // Middle layer (preferred) runs local MYCIN before kernel.
-const MIDDLE = "http://127.0.0.1:8788";
+// Both backends are overridable via environment so deployments (and tests) can
+// point the gateway anywhere without editing source:
+//   SEMANTIC_WORLD_MIDDLE_URL  (default http://127.0.0.1:8788)
+//   SEMANTIC_WORLD_DIRECT_URL  (default http://127.0.0.1:8787)
+const MIDDLE = process.env.SEMANTIC_WORLD_MIDDLE_URL || "http://127.0.0.1:8788";
 // Fallback to direct swe if middle not running (v0.4 reference)
-const DIRECT_SWE = "http://127.0.0.1:8787";
+const DIRECT_SWE = process.env.SEMANTIC_WORLD_DIRECT_URL || "http://127.0.0.1:8787";
 
 export const info = {
   id: "semantic-world",

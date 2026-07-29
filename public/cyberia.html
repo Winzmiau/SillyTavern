@@ -105,14 +105,19 @@ let ENGINE = params.get('engine') || '';
 if (ENGINE && !ENGINE.endsWith('/')) ENGINE += '/';
 const api = (p) => ENGINE + p.replace(/^\//,'');
 console.log('[cyberia] engine base:', ENGINE || 'same-origin (ST proxy or co-serve)');
-// Patch global fetch for the relative calls in the original code
-const _fetch = window.fetch;
-window.fetch = (url, opts) => {
-  if (typeof url === 'string' && url.startsWith('/') && ENGINE) {
+// Scoped fetch shim: rewrite ONLY the engine endpoints this page actually calls,
+// and only when ?engine= is set — a global rewrite of every root-relative fetch
+// would silently hijack unrelated requests if this page is ever embedded in the
+// ST app shell (or any host page).
+const ENGINE_PATHS = /^\/(frame|pose|health|regen|projection|say|gather)(\/|\?|$)/;
+const _fetch = window.fetch.bind(window);
+const engineFetch = (url, opts) => {
+  if (typeof url === 'string' && ENGINE && ENGINE_PATHS.test(url)) {
     url = api(url);
   }
   return _fetch(url, opts);
 };
+if (ENGINE) window.fetch = engineFetch;
 
 const HL_COLOR   = [80, 220, 255];
 // per-archetype body/billboard colours + legend
