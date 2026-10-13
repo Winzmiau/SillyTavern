@@ -12,6 +12,8 @@ import mime from 'mime-types';
 import { Jimp, JimpMime } from '../jimp.js';
 import storage from 'node-persist';
 
+import { consumeJsonUpload } from '../async-filesystem.js';
+
 import { AVATAR_WIDTH, AVATAR_HEIGHT, DEFAULT_AVATAR_PATH } from '../constants.js';
 import { default as validateAvatarUrlMiddleware, getFileNameValidationFunction, forbiddenRegExp } from '../middleware/validateFileName.js';
 import { deepMerge, humanizedDateTime, tryParse, MemoryLimitedMap, getConfigValue, mutateJsonString, clientRelativePath, getUniqueName, sanitizeSafeCharacterReplacements } from '../util.js';
@@ -881,8 +883,7 @@ async function importFromByaf(uploadPath, { request }, preservedFileName) {
  * @returns {Promise<string>} Internal name of the character
  */
 async function importFromJson(uploadPath, { request }, preservedFileName) {
-    const data = fs.readFileSync(uploadPath, 'utf8');
-    fs.unlinkSync(uploadPath);
+    const data = await consumeJsonUpload(uploadPath);
 
     let jsonData = JSON.parse(data);
 

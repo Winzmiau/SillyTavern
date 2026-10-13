@@ -117,6 +117,9 @@
     },
     "version": "1.18.0",
     "scripts": {
+        "test:async-filesystem:safety": "node --test tests/async-filesystem/safety.mjs",
+        "test:async-filesystem": "node --test tests/async-filesystem/regression.mjs",
+        "benchmark:async-filesystem": "node tests/async-filesystem/benchmark.mjs",
         "init": "node src/server-init.js",
         "start": "node server.js",
         "debug": "node --inspect server.js",
