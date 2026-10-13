@@ -1,3 +1,4 @@
+import { withChatAccess } from '../async-filesystem.js';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -670,7 +671,7 @@ export class DataMaidService {
 
 export const router = express.Router();
 
-router.post('/report', async (req, res) => {
+router.post('/report', withChatAccess(async (req, res) => {
     try {
         if (!req.user || !req.user.directories) {
             return res.sendStatus(403);
@@ -687,9 +688,9 @@ router.post('/report', async (req, res) => {
         console.error('[Data Maid] Error generating data maid report:', error);
         return res.sendStatus(500);
     }
-});
+}));
 
-router.post('/finalize', async (req, res) => {
+router.post('/finalize', withChatAccess(async (req, res) => {
     try {
         if (!req.user || !req.user.directories) {
             return res.sendStatus(403);
@@ -716,7 +717,7 @@ router.post('/finalize', async (req, res) => {
         console.error('[Data Maid] Error finalizing the token:', error);
         return res.sendStatus(500);
     }
-});
+}));
 
 router.get('/view', async (req, res) => {
     try {
@@ -767,7 +768,7 @@ router.get('/view', async (req, res) => {
     }
 });
 
-router.post('/delete', async (req, res) => {
+router.post('/delete', withChatAccess(async (req, res) => {
     try {
         if (!req.user || !req.user.directories) {
             return res.sendStatus(403);
@@ -813,4 +814,4 @@ router.post('/delete', async (req, res) => {
         console.error('[Data Maid] Error deleting files:', error);
         return res.sendStatus(500);
     }
-});
+}));

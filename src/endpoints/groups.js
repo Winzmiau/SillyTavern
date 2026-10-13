@@ -1,3 +1,4 @@
+import { withChatAccess } from '../async-filesystem.js';
 import fs from 'node:fs';
 import { promises as fsPromises } from 'node:fs';
 import path from 'node:path';
@@ -110,7 +111,7 @@ export async function migrateGroupChatsMetadataFormat(userDirectories) {
     }
 }
 
-router.post('/all', (request, response) => {
+router.post('/all', withChatAccess((request, response) => {
     const groups = [];
 
     if (!fs.existsSync(request.user.directories.groups)) {
@@ -151,9 +152,9 @@ router.post('/all', (request, response) => {
     });
 
     return response.send(groups);
-});
+}));
 
-router.post('/create', (request, response) => {
+router.post('/create', withChatAccess((request, response) => {
     if (!request.body) {
         return response.sendStatus(400);
     }
@@ -185,9 +186,9 @@ router.post('/create', (request, response) => {
 
     writeFileAtomicSync(pathToFile, fileData);
     return response.send(groupMetadata);
-});
+}));
 
-router.post('/edit', getFileNameValidationFunction('id'), (request, response) => {
+router.post('/edit', getFileNameValidationFunction('id'), withChatAccess((request, response) => {
     if (!request.body || !request.body.id) {
         return response.sendStatus(400);
     }
@@ -198,9 +199,9 @@ router.post('/edit', getFileNameValidationFunction('id'), (request, response) =>
 
     writeFileAtomicSync(pathToFile, fileData);
     return response.send({ ok: true });
-});
+}));
 
-router.post('/delete', getFileNameValidationFunction('id'), async (request, response) => {
+router.post('/delete', getFileNameValidationFunction('id'), withChatAccess(async (request, response) => {
     if (!request.body || !request.body.id) {
         return response.sendStatus(400);
     }
@@ -231,4 +232,4 @@ router.post('/delete', getFileNameValidationFunction('id'), async (request, resp
     }
 
     return response.send({ ok: true });
-});
+}));

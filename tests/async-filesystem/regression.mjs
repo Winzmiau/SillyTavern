@@ -5,7 +5,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { execFileSync } from 'node:child_process';
 import { afterEach, beforeEach, test } from 'node:test';
-import { consumeJsonUpload, renameChatFile } from '../../src/async-filesystem.js';
+import { consumeJsonUpload, renameChatFile, withChatAccess } from '../../src/async-filesystem.js';
 
 // Execute the actual endpoint bodies with only unrelated application dependencies
 // stubbed. This avoids starting a server or accessing any user configuration/data.
@@ -31,7 +31,7 @@ function renameHandler(fn = renameChatFile) {
     let handler;
     vm.runInNewContext(route, {
         router: { post: (...args) => { handler = args.at(-1); } },
-        validateAvatarUrlMiddleware() {}, path, fs, renameChatFile: fn,
+        validateAvatarUrlMiddleware() {}, path, fs, renameChatFile: fn, withChatAccess,
         sanitize: name => name.replace(/[/?<>\\:*|"\x00]/g, ''),
         isPathUnderParent: (parent, child) => child.startsWith(parent + path.sep), console: quiet,
     });
@@ -46,7 +46,7 @@ function jsonHandler({ consume = consumeJsonUpload, persist = async () => true }
     let handler;
     vm.runInNewContext(importer + importRoute, {
         router: { post: (...args) => { handler = args.at(-1); } },
-        fs, path, console: quiet, consumeJsonUpload: consume,
+        fs, path, console: quiet, consumeJsonUpload: consume, withChatAccess,
         getPreservedName: req => req.body.preserved_name,
         sanitize: name => name, humanizedDateTime: () => 'date',
         getPngName: name => name, convertToV2: data => data, readFromV2: data => data,
@@ -58,7 +58,7 @@ function jsonHandler({ consume = consumeJsonUpload, persist = async () => true }
 }
 async function importJson(name, options, body = {}) {
     const res = response();
-    await jsonHandler(options)({ body: { file_type: 'json', ...body }, file: { destination: directory, filename: name }, user: { directories: {} } }, res);
+    await jsonHandler(options)({ body: { file_type: 'json', ...body }, file: { destination: directory, filename: name }, user: { directories: { chats: directory } } }, res);
     return res;
 }
 const codeError = code => Object.assign(new Error(code), { code });

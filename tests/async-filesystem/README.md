@@ -1,4 +1,4 @@
-# Async filesystem candidate — DRAFT, DO NOT MERGE
+# Async chat rename and JSON upload I/O
 
 Base: `Winzmiau/SillyTavern` release commit
 `1d8372abd3398be6ccde7f4fff41c126357ea8c4` (1.18.0).
@@ -8,39 +8,53 @@ Successful reads consume malformed/unsupported uploads; read failures retain the
 delete failures prevent persistence; existing response and persistence behavior is
 unchanged. Other character import formats and downstream PNG writes are unchanged.
 
-The chat rename candidate preserves validation, response bodies and copy-before-
+The chat rename implementation preserves validation, response bodies and copy-before-
 delete ordering. It uses asynchronous access/copy/unlink, exclusive destination
 creation, and sorted process-local path locks. Competing rename requests cannot
 both consume a source or overwrite a shared destination. An unlink failure retains
 both files and returns 500, as before. Destination creation during the operation
 now returns 400 rather than overwriting the new file.
 
-## Release blocker discovered during validation
+## Filesystem coordination
 
-**The candidate is NOT safe to merge.** Existing save/delete/import and character/
-group lifecycle operations do not share the new locks. A synchronous chat save
-between completed async copy and source unlink is discarded. The old synchronous
-copy/unlink sequence does not yield to that same-process save. Partial destination
-visibility to readers is also newly possible during the asynchronous copy.
+A rename-only lock was insufficient: a save between completed asynchronous copy
+and source unlink could be discarded, and a reader could see a partial destination.
+The final implementation grants chat rename exclusive access to a user's cooperating
+endpoint handlers. Ordinary operations hold shared access and retain concurrency
+with each other. FIFO admission prevents ordinary traffic from starving a rename.
 
-`npm run test:async-filesystem:safety` deterministically reproduces the save race
-and currently FAILS. Do not interpret the passing targeted tests as comprehensive
-filesystem consistency validation. The next implementation must coordinate the
-relevant writers, deletion/directory lifecycle and readers, or use a reviewed
-publication protocol preserving the requested failure behavior. This extends the
-necessary supporting changes beyond the two initial function bodies. Process-local
-locks cannot guarantee cross-process/alias-path coordination; there is no claim of
-crash atomicity or a filesystem transaction.
+Chat, character, group, Data Maid and statistics handlers opt into this coordination
+because they read or mutate chat files, ownership or directory lifecycles. Their
+existing validation middleware remains outside the coordinated handler. Only chat
+rename is exclusive. Ordinary handler ownership lasts through handler settlement,
+even on client disconnection; callback-driven text export additionally waits for
+response completion. Coordination changes admission timing during rename, not
+response status/body contracts or ordinary save/delete implementations.
+
+`npm run test:async-filesystem:safety` now passes all eight tests, including the
+actual rename/save endpoint bodies with a save deliberately queued inside the
+copy/delete window. These supporting wrappers are necessary for this async change,
+not unrelated endpoint refactoring.
+
+Scope: one server process and the cooperating HTTP handlers. External processes,
+plugins writing files directly, background maintenance outside those handlers,
+filesystem aliases and administrative removal of an entire user data directory
+are not covered by these locks. The original synchronous implementation also did
+not provide cross-process transactions. Copy + unlink remains non-atomic under
+crash or external mutation; exclusive copy protects destination creation by an
+external writer but cannot supply a filesystem transaction. On unlink failure,
+both files remain and the original error response is preserved.
 
 ## Executable checks and observed results
 
-- `npm run test:async-filesystem`: 23 passing tests, actual endpoint bodies in a VM
+- `npm run test:async-filesystem`: 31 passing tests, actual endpoint bodies in a VM
   harness with unrelated application dependencies stubbed, and real temporary files.
   This is not a complete Express/Multer/image-persistence integration test.
 - `npm run test:unit --prefix tests -- --runInBand`: 315 tests, 6 suites passing.
-- `npm exec -- eslint src/async-filesystem.js src/endpoints/chats.js src/endpoints/characters.js`:
+- `npm exec -- eslint src/async-filesystem.js src/endpoints/chats.js src/endpoints/characters.js src/endpoints/groups.js src/endpoints/data-maid.js src/endpoints/stats.js`:
   passing.
-- `npm run test:async-filesystem:safety`: 1 failing release-blocking regression.
+- `npm run test:async-filesystem:safety`: 8 passing concurrency/safety tests.
+- Browser end-to-end tests were not run.
 - 13 unchanged observable behavior cases also pass against the original source:
 
 ```sh
