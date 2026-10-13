@@ -12,6 +12,8 @@ import mime from 'mime-types';
 import { Jimp, JimpMime } from '../jimp.js';
 import storage from 'node-persist';
 
+import { consumeJsonUpload, withChatAccess } from '../async-filesystem.js';
+
 import { AVATAR_WIDTH, AVATAR_HEIGHT, DEFAULT_AVATAR_PATH } from '../constants.js';
 import { default as validateAvatarUrlMiddleware, getFileNameValidationFunction, forbiddenRegExp } from '../middleware/validateFileName.js';
 import { deepMerge, humanizedDateTime, tryParse, MemoryLimitedMap, getConfigValue, mutateJsonString, clientRelativePath, getUniqueName, sanitizeSafeCharacterReplacements } from '../util.js';
@@ -881,8 +883,7 @@ async function importFromByaf(uploadPath, { request }, preservedFileName) {
  * @returns {Promise<string>} Internal name of the character
  */
 async function importFromJson(uploadPath, { request }, preservedFileName) {
-    const data = fs.readFileSync(uploadPath, 'utf8');
-    fs.unlinkSync(uploadPath);
+    const data = await consumeJsonUpload(uploadPath);
 
     let jsonData = JSON.parse(data);
 
@@ -1021,7 +1022,7 @@ async function importFromPng(uploadPath, { request }, preservedFileName) {
 
 export const router = express.Router();
 
-router.post('/create', getFileNameValidationFunction('file_name'), async function (request, response) {
+router.post('/create', getFileNameValidationFunction('file_name'), withChatAccess(async function (request, response) {
     try {
         if (!request.body) return response.sendStatus(400);
 
@@ -1048,9 +1049,9 @@ router.post('/create', getFileNameValidationFunction('file_name'), async functio
         console.error(err);
         response.sendStatus(500);
     }
-});
+}));
 
-router.post('/rename', validateAvatarUrlMiddleware, async function (request, response) {
+router.post('/rename', validateAvatarUrlMiddleware, withChatAccess(async function (request, response) {
     if (!request.body.avatar_url || !request.body.new_name) {
         return response.sendStatus(400);
     }
@@ -1094,9 +1095,9 @@ router.post('/rename', validateAvatarUrlMiddleware, async function (request, res
         console.error(err);
         return response.sendStatus(500);
     }
-});
+}));
 
-router.post('/edit', validateAvatarUrlMiddleware, async function (request, response) {
+router.post('/edit', validateAvatarUrlMiddleware, withChatAccess(async function (request, response) {
     if (!request.body) {
         console.warn('Error: no response body detected');
         response.status(400).send('Error: no response body detected');
@@ -1135,9 +1136,9 @@ router.post('/edit', validateAvatarUrlMiddleware, async function (request, respo
         console.error('An error occurred, character edit invalidated.', err);
         return response.sendStatus(500);
     }
-});
+}));
 
-router.post('/edit-avatar', validateAvatarUrlMiddleware, async function (request, response) {
+router.post('/edit-avatar', validateAvatarUrlMiddleware, withChatAccess(async function (request, response) {
     try {
         if (!request.file) {
             return response.status(400).send('Error: no file uploaded');
@@ -1176,7 +1177,7 @@ router.post('/edit-avatar', validateAvatarUrlMiddleware, async function (request
         console.error('An error occurred while editing avatar', err);
         return response.sendStatus(500);
     }
-});
+}));
 
 /**
  * Handle a POST request to edit a character attribute.
@@ -1188,7 +1189,7 @@ router.post('/edit-avatar', validateAvatarUrlMiddleware, async function (request
  * @param {Object} response - The HTTP response object.
  * @returns {void}
  */
-router.post('/edit-attribute', validateAvatarUrlMiddleware, async function (request, response) {
+router.post('/edit-attribute', validateAvatarUrlMiddleware, withChatAccess(async function (request, response) {
     console.debug(request.body);
     if (!request.body) {
         console.warn('Error: no response body detected');
@@ -1227,7 +1228,7 @@ router.post('/edit-attribute', validateAvatarUrlMiddleware, async function (requ
         console.error('An error occurred, character edit invalidated.', err);
         return response.sendStatus(500);
     }
-});
+}));
 
 /**
  * Sentinel value that signals a field should be completely removed (unset)
@@ -1323,7 +1324,7 @@ async function mergeCharacterUpdate(avatarPath, avatar, updateData, request, sho
  * @param {import("express").Response} response - The HTTP response object
  * @returns {void}
  */
-router.post('/merge-attributes', getFileNameValidationFunction('avatar'), async function (request, response) {
+router.post('/merge-attributes', getFileNameValidationFunction('avatar'), withChatAccess(async function (request, response) {
     try {
         // ── Bulk mode: avatars array is present ──────────────────
         if (Array.isArray(request.body.avatars)) {
@@ -1409,9 +1410,9 @@ router.post('/merge-attributes', getFileNameValidationFunction('avatar'), async 
     } catch (exception) {
         response.status(500).send({ message: 'Unexpected error while saving character.', error: exception.toString() });
     }
-});
+}));
 
-router.post('/delete', validateAvatarUrlMiddleware, async function (request, response) {
+router.post('/delete', validateAvatarUrlMiddleware, withChatAccess(async function (request, response) {
     if (!request.body || !request.body.avatar_url) {
         return response.sendStatus(400);
     }
@@ -1445,7 +1446,7 @@ router.post('/delete', validateAvatarUrlMiddleware, async function (request, res
     }
 
     return response.sendStatus(200);
-});
+}));
 
 /**
  * HTTP POST endpoint for the "/api/characters/all" route.
@@ -1461,7 +1462,7 @@ router.post('/delete', validateAvatarUrlMiddleware, async function (request, res
  * @param  {import("express").Response} response The HTTP response object.
  * @return {void}
  */
-router.post('/all', async function (request, response) {
+router.post('/all', withChatAccess(async function (request, response) {
     try {
         const files = fs.readdirSync(request.user.directories.characters);
         const pngFiles = files.filter(file => file.endsWith('.png'));
@@ -1473,9 +1474,9 @@ router.post('/all', async function (request, response) {
         const isRangeError = err instanceof RangeError;
         response.status(500).send({ overflow: isRangeError, error: true });
     }
-});
+}));
 
-router.post('/get', validateAvatarUrlMiddleware, async function (request, response) {
+router.post('/get', validateAvatarUrlMiddleware, withChatAccess(async function (request, response) {
     try {
         if (!request.body) return response.sendStatus(400);
         const item = request.body.avatar_url;
@@ -1492,9 +1493,9 @@ router.post('/get', validateAvatarUrlMiddleware, async function (request, respon
         console.error(err);
         response.sendStatus(500);
     }
-});
+}));
 
-router.post('/chats', validateAvatarUrlMiddleware, async function (request, response) {
+router.post('/chats', validateAvatarUrlMiddleware, withChatAccess(async function (request, response) {
     try {
         if (!request.body) return response.sendStatus(400);
 
@@ -1530,7 +1531,7 @@ router.post('/chats', validateAvatarUrlMiddleware, async function (request, resp
         console.error(error);
         return response.send({ error: true });
     }
-});
+}));
 
 /**
  * Gets the name for the uploaded PNG file.
@@ -1555,7 +1556,7 @@ function getPreservedName(request) {
         : undefined;
 }
 
-router.post('/import', async function (request, response) {
+router.post('/import', withChatAccess(async function (request, response) {
     if (!request.body || !request.file) return response.sendStatus(400);
 
     const uploadPath = path.join(request.file.destination, request.file.filename);
@@ -1594,9 +1595,9 @@ router.post('/import', async function (request, response) {
         console.error(err);
         response.send({ error: true });
     }
-});
+}));
 
-router.post('/duplicate', validateAvatarUrlMiddleware, async function (request, response) {
+router.post('/duplicate', validateAvatarUrlMiddleware, withChatAccess(async function (request, response) {
     try {
         if (!request.body.avatar_url) {
             console.warn('avatar URL not found in request body');
@@ -1639,9 +1640,9 @@ router.post('/duplicate', validateAvatarUrlMiddleware, async function (request, 
         console.error(error);
         return response.send({ error: true });
     }
-});
+}));
 
-router.post('/export', validateAvatarUrlMiddleware, async function (request, response) {
+router.post('/export', validateAvatarUrlMiddleware, withChatAccess(async function (request, response) {
     try {
         if (!request.body.format || !request.body.avatar_url) {
             return response.sendStatus(400);
@@ -1682,4 +1683,4 @@ router.post('/export', validateAvatarUrlMiddleware, async function (request, res
         console.error('Character export failed', err);
         response.sendStatus(500);
     }
-});
+}));

@@ -8,6 +8,8 @@ import sanitize from 'sanitize-filename';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import _ from 'lodash';
 
+import { renameChatFile, withChatAccess } from '../async-filesystem.js';
+
 import validateAvatarUrlMiddleware from '../middleware/validateFileName.js';
 import {
     getConfigValue,
@@ -467,7 +469,7 @@ export async function trySaveChat(chatData, filePath, skipIntegrityCheck = false
     getBackupFunction(handle)(backupDirectory, cardName, jsonlData);
 }
 
-router.post('/save', validateAvatarUrlMiddleware, async function (request, response) {
+router.post('/save', validateAvatarUrlMiddleware, withChatAccess(async function (request, response) {
     try {
         const handle = request.user.profile.handle;
         const cardName = String(request.body.avatar_url).replace('.png', '');
@@ -492,7 +494,7 @@ router.post('/save', validateAvatarUrlMiddleware, async function (request, respo
         console.error(error);
         return response.status(500).send({ error: 'An error has occurred, see the console logs for more information.' });
     }
-});
+}));
 
 /**
  * Gets the chat as an object.
@@ -514,7 +516,7 @@ export function getChatData(chatFilePath) {
     return chatData;
 }
 
-router.post('/get', validateAvatarUrlMiddleware, function (request, response) {
+router.post('/get', validateAvatarUrlMiddleware, withChatAccess(function (request, response) {
     try {
         const dirName = String(request.body.avatar_url).replace('.png', '');
         const directoryPath = path.join(request.user.directories.chats, dirName);
@@ -541,9 +543,9 @@ router.post('/get', validateAvatarUrlMiddleware, function (request, response) {
         console.error(error);
         return response.send({});
     }
-});
+}));
 
-router.post('/rename', validateAvatarUrlMiddleware, async function (request, response) {
+router.post('/rename', validateAvatarUrlMiddleware, withChatAccess(async function (request, response) {
     try {
         if (!request.body || !request.body.original_file || !request.body.renamed_file) {
             return response.sendStatus(400);
@@ -561,22 +563,20 @@ router.post('/rename', validateAvatarUrlMiddleware, async function (request, res
         console.debug('Old chat name', pathToOriginalFile);
         console.debug('New chat name', pathToRenamedFile);
 
-        if (!fs.existsSync(pathToOriginalFile) || fs.existsSync(pathToRenamedFile)) {
+        if (!await renameChatFile(pathToOriginalFile, pathToRenamedFile)) {
             console.error('Either Source or Destination files are not available');
             return response.status(400).send({ error: true });
         }
 
-        fs.copyFileSync(pathToOriginalFile, pathToRenamedFile);
-        fs.unlinkSync(pathToOriginalFile);
         console.info('Successfully renamed chat file.');
         return response.send({ ok: true, sanitizedFileName });
     } catch (error) {
         console.error('Error renaming chat file:', error);
         return response.status(500).send({ error: true });
     }
-});
+}, true));
 
-router.post('/delete', validateAvatarUrlMiddleware, function (request, response) {
+router.post('/delete', validateAvatarUrlMiddleware, withChatAccess(function (request, response) {
     try {
         if (!path.extname(request.body.chatfile)) {
             request.body.chatfile += '.jsonl';
@@ -599,9 +599,9 @@ router.post('/delete', validateAvatarUrlMiddleware, function (request, response)
         console.error(error);
         return response.sendStatus(500);
     }
-});
+}));
 
-router.post('/export', validateAvatarUrlMiddleware, async function (request, response) {
+router.post('/export', validateAvatarUrlMiddleware, withChatAccess(async function (request, response) {
     if (!request.body.file || (!request.body.avatar_url && request.body.is_group === false)) {
         return response.sendStatus(400);
     }
@@ -671,9 +671,9 @@ router.post('/export', validateAvatarUrlMiddleware, async function (request, res
         console.error('chat export failed.', err);
         return response.sendStatus(400);
     }
-});
+}, false, true));
 
-router.post('/group/import', function (request, response) {
+router.post('/group/import', withChatAccess(function (request, response) {
     try {
         const filedata = request.file;
 
@@ -691,9 +691,9 @@ router.post('/group/import', function (request, response) {
         console.error(error);
         return response.send({ error: true });
     }
-});
+}));
 
-router.post('/import', validateAvatarUrlMiddleware, function (request, response) {
+router.post('/import', validateAvatarUrlMiddleware, withChatAccess(function (request, response) {
     if (!request.body) return response.sendStatus(400);
 
     const format = request.body.file_type;
@@ -792,9 +792,9 @@ router.post('/import', validateAvatarUrlMiddleware, function (request, response)
         console.error(error);
         return response.send({ error: true });
     }
-});
+}));
 
-router.post('/group/get', (request, response) => {
+router.post('/group/get', withChatAccess((request, response) => {
     if (!request.body || !request.body.id) {
         return response.sendStatus(400);
     }
@@ -803,9 +803,9 @@ router.post('/group/get', (request, response) => {
     const chatFilePath = path.join(request.user.directories.groupChats, sanitize(`${id}.jsonl`));
 
     return response.send(getChatData(chatFilePath));
-});
+}));
 
-router.post('/group/info', async (request, response) => {
+router.post('/group/info', withChatAccess(async (request, response) => {
     try {
         if (!request.body || !request.body.id) {
             return response.sendStatus(400);
@@ -820,9 +820,9 @@ router.post('/group/info', async (request, response) => {
         console.error(error);
         return response.sendStatus(500);
     }
-});
+}));
 
-router.post('/group/delete', (request, response) => {
+router.post('/group/delete', withChatAccess((request, response) => {
     try {
         if (!request.body || !request.body.id) {
             return response.sendStatus(400);
@@ -842,9 +842,9 @@ router.post('/group/delete', (request, response) => {
         console.error(error);
         return response.sendStatus(500);
     }
-});
+}));
 
-router.post('/group/save', async function (request, response) {
+router.post('/group/save', withChatAccess(async function (request, response) {
     try {
         if (!request.body || !request.body.id) {
             return response.sendStatus(400);
@@ -869,9 +869,9 @@ router.post('/group/save', async function (request, response) {
         console.error(error);
         return response.status(500).send({ error: 'An error has occurred, see the console logs for more information.' });
     }
-});
+}));
 
-router.post('/search', validateAvatarUrlMiddleware, async function (request, response) {
+router.post('/search', validateAvatarUrlMiddleware, withChatAccess(async function (request, response) {
     try {
         const { query, avatar_url, group_id } = request.body;
 
@@ -974,9 +974,9 @@ router.post('/search', validateAvatarUrlMiddleware, async function (request, res
         console.error('Chat search error:', error);
         return response.status(500).json({ error: 'Search failed' });
     }
-});
+}));
 
-router.post('/recent', async function (request, response) {
+router.post('/recent', withChatAccess(async function (request, response) {
     try {
         /** @typedef {{pngFile?: string, groupId?: string, filePath: string, mtime: number}} ChatFile */
         /** @type {ChatFile[]} */
@@ -1074,4 +1074,4 @@ router.post('/recent', async function (request, response) {
         console.error(error);
         return response.sendStatus(500);
     }
-});
+}));

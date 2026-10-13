@@ -1,3 +1,4 @@
+import { withChatAccess } from '../async-filesystem.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -441,15 +442,15 @@ export const router = express.Router();
 /**
  * Handle a POST request to get the stats object
  */
-router.post('/get', function (request, response) {
+router.post('/get', withChatAccess(function (request, response) {
     const stats = STATS.get(request.user.profile.handle) || {};
     response.send(stats);
-});
+}));
 
 /**
  * Triggers the recreation of statistics from chat files.
  */
-router.post('/recreate', async function (request, response) {
+router.post('/recreate', withChatAccess(async function (request, response) {
     try {
         await recreateStats(request.user.profile.handle, request.user.directories.chats, request.user.directories.characters);
         return response.sendStatus(200);
@@ -457,13 +458,13 @@ router.post('/recreate', async function (request, response) {
         console.error(error);
         return response.sendStatus(500);
     }
-});
+}));
 
 /**
  * Handle a POST request to update the stats object
 */
-router.post('/update', function (request, response) {
+router.post('/update', withChatAccess(function (request, response) {
     if (!request.body) return response.sendStatus(400);
     setCharStats(request.user.profile.handle, request.body);
     return response.sendStatus(200);
-});
+}));
